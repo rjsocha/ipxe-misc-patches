@@ -1,5 +1,5 @@
 diff --git a/src/hci/commands/time_cmd.c b/src/hci/commands/time_cmd.c
-index 08148bf..f520e10 100644
+index 08148bf..8d578c7 100644
 --- a/src/hci/commands/time_cmd.c
 +++ b/src/hci/commands/time_cmd.c
 @@ -26,6 +26,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
@@ -33,7 +33,7 @@ index 08148bf..f520e10 100644
  
  /** "time" command descriptor */
  static struct command_descriptor time_cmd =
-@@ -59,20 +70,32 @@ static int time_exec ( int argc, char **argv ) {
+@@ -59,20 +70,34 @@ static int time_exec ( int argc, char **argv ) {
  	unsigned long start;
  	unsigned long elapsed;
  	int decisecs;
@@ -41,6 +41,8 @@ index 08148bf..f520e10 100644
 +	int rc,rcs;
 +	struct named_setting setting;
 +	char buf[30];
++
++	memset ( &opts, 0, sizeof ( opts ) );
  
  	/* Parse options */
  	if ( ( rc = parse_options ( argc, argv, &time_cmd, &opts ) ) != 0 )
