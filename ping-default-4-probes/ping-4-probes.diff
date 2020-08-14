@@ -1,0 +1,12 @@
+diff --git a/src/hci/commands/ping_cmd.c b/src/hci/commands/ping_cmd.c
+index ab271e7..bf2d2d3 100644
+--- a/src/hci/commands/ping_cmd.c
++++ b/src/hci/commands/ping_cmd.c
+@@ -90,6 +90,7 @@ static int ping_exec ( int argc, char **argv ) {
+ 	memset ( &opts, 0, sizeof ( opts ) );
+ 	opts.size = PING_DEFAULT_SIZE;
+ 	opts.timeout = PING_DEFAULT_TIMEOUT;
++	opts.count = 4;
+ 
+ 	/* Parse options */
+ 	if ( ( rc = reparse_options ( argc, argv, &ping_cmd, &opts ) ) != 0 )
