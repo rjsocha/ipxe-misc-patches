@@ -1,0 +1,72 @@
+diff --git a/src/hci/commands/time_cmd.c b/src/hci/commands/time_cmd.c
+index 08148bf..f520e10 100644
+--- a/src/hci/commands/time_cmd.c
++++ b/src/hci/commands/time_cmd.c
+@@ -26,6 +26,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
++#include <getopt.h>
+ #include <ipxe/command.h>
+ #include <ipxe/parseopt.h>
+ #include <ipxe/timer.h>
+@@ -37,10 +38,20 @@ FILE_LICENCE ( GPL2_OR_LATER );
+  */
+ 
+ /** "time" options */
+-struct time_options {};
++struct time_options {
++	/** Do not print elapsed time */
++	int no_print;
++	/** store result in variable */
++	char *store;
++};
+ 
+ /** "time" option list */
+-static struct option_descriptor time_opts[] = {};
++static struct option_descriptor time_opts[] = {
++	OPTION_DESC ( "no-print", 'n', no_argument,
++			struct time_options, no_print, parse_flag ),
++	OPTION_DESC ( "store", 's', required_argument,
++			struct time_options, store, parse_string ),
++};
+ 
+ /** "time" command descriptor */
+ static struct command_descriptor time_cmd =
+@@ -59,20 +70,32 @@ static int time_exec ( int argc, char **argv ) {
+ 	unsigned long start;
+ 	unsigned long elapsed;
+ 	int decisecs;
+-	int rc;
++	int rc,rcs;
++	struct named_setting setting;
++	char buf[30];
+ 
+ 	/* Parse options */
+ 	if ( ( rc = parse_options ( argc, argv, &time_cmd, &opts ) ) != 0 )
+ 		return rc;
+ 
+ 	start = currticks();
+-	rc = execv ( argv[1], argv + 1 );
++	rc = execv ( argv[optind], argv + optind );
+ 	elapsed = ( currticks() - start );
+ 	decisecs = ( 10 * elapsed / TICKS_PER_SEC );
+ 
+-	printf ( "%s: %d.%ds\n", argv[0],
+-		 ( decisecs / 10 ), ( decisecs % 10 ) );
++	if(!opts.no_print) 
++		printf ( "%s: %d.%ds\n", argv[0],
++			 ( decisecs / 10 ), ( decisecs % 10 ) );
+ 
++	if(opts.store) 
++		if(parse_autovivified_setting(opts.store,&setting)==0) {
++			setting.setting.type = &setting_type_string;
++			snprintf(buf,sizeof(buf),"%ld", (1000 * elapsed) / TICKS_PER_SEC);
++			if( ( rcs = storef_setting ( setting.settings, &setting.setting,buf) ) != 0) {
++             			printf ( "Could not store \"%s\": %s\n",
++	                        	setting.setting.name, strerror ( rcs ) );
++			}
++		}
+ 	return rc;
+ }
+ 
