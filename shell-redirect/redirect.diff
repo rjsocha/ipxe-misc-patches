@@ -1,0 +1,79 @@
+diff --git a/src/core/exec.c b/src/core/exec.c
+index a13884b..a5afc58 100644
+--- a/src/core/exec.c
++++ b/src/core/exec.c
+@@ -57,10 +57,18 @@ static int stop_state;
+  * Execute the named command.  Unlike a traditional POSIX execv(),
+  * this function returns the exit status of the command.
+  */
+-int execv ( const char *command, char * const argv[] ) {
++int execv ( const char *command, char * argv[] ) {
+ 	struct command *cmd;
+-	int argc;
++	int argc,i;
+ 	int rc;
++	char *redirect=NULL;
++	int shift_redirect;
++
++	printf("C: %s A: ",command);
++	for(argc=1; argv[argc]; argc++) {
++		printf("%s ",argv[argc]);
++	}
++	printf("\n");	
+ 
+ 	/* Count number of arguments */
+ 	for ( argc = 0 ; argv[argc] ; argc++ ) {}
+@@ -77,7 +85,31 @@ int execv ( const char *command, char * const argv[] ) {
+ 		rc = -EINVAL;
+ 		goto done;
+ 	}
++	
++	for(i=1;argv[i];i++) {
++		if(*argv[i]=='>') {
++			if(redirect) {
++				printf ( "%s: redirection already set\n", command );
++			        rc = -ENOEXEC;
++				goto done;
++			}
++			redirect = strdup ( argv[i]+1 );
++        		if ( ! redirect) {
++				printf ( "%s: out of memory\n", command );
++			        rc = -ENOMEM;
++				goto done;
++			}
++			shift_redirect=i;
++			printf("REDIRECT: %s\n",redirect);
++		}
++	}
+ 
++	if(redirect) {
++		free(argv[ shift_redirect ]);
++		for(i=shift_redirect; i<=argc;i++) {
++			argv[i]=argv[i+1];
++		}
++	}
+ 	/* Reset getopt() library ready for use by the command.  This
+ 	 * is an artefact of the POSIX getopt() API within the context
+ 	 * of Etherboot; see the documentation for reset_getopt() for
+@@ -97,6 +129,8 @@ int execv ( const char *command, char * const argv[] ) {
+ 	rc = -ENOEXEC;
+ 
+  done:
++	if(redirect)
++		free(redirect);
+ 	/* Store error number, if an error occurred */
+ 	if ( rc ) {
+ 		errno = rc;
+diff --git a/src/include/unistd.h b/src/include/unistd.h
+index 6c31c06..1da48b6 100644
+--- a/src/include/unistd.h
++++ b/src/include/unistd.h
+@@ -6,7 +6,7 @@ FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
+ #include <stddef.h>
+ #include <stdarg.h>
+ 
+-extern int execv ( const char *command, char * const argv[] );
++extern int execv ( const char *command, char * argv[] );
+ 
+ /**
+  * Execute command
