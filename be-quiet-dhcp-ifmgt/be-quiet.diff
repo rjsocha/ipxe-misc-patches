@@ -1,0 +1,452 @@
+diff --git a/src/arch/x86/interface/syslinux/comboot_call.c b/src/arch/x86/interface/syslinux/comboot_call.c
+index e70f200..7c33246 100644
+--- a/src/arch/x86/interface/syslinux/comboot_call.c
++++ b/src/arch/x86/interface/syslinux/comboot_call.c
+@@ -186,7 +186,7 @@ static int comboot_fetch_kernel ( char *kernel_file, char *cmdline ) {
+ 
+ 		/* Fetch initrd */
+ 		if ( ( rc = imgdownload_string ( initrd_file, 0,
+-						 &initrd ) ) != 0 ) {
++						 &initrd, 0 ) ) != 0 ) {
+ 			DBG ( "COMBOOT: could not fetch initrd: %s\n",
+ 			      strerror ( rc ) );
+ 			return rc;
+@@ -200,7 +200,7 @@ static int comboot_fetch_kernel ( char *kernel_file, char *cmdline ) {
+ 	DBG ( "COMBOOT: fetching kernel '%s'\n", kernel_file );
+ 
+ 	/* Fetch kernel */
+-	if ( ( rc = imgdownload_string ( kernel_file, 0, &kernel ) ) != 0 ) {
++	if ( ( rc = imgdownload_string ( kernel_file, 0, &kernel, 0 ) ) != 0 ) {
+ 		DBG ( "COMBOOT: could not fetch kernel: %s\n",
+ 		      strerror ( rc ) );
+ 		return rc;
+diff --git a/src/core/monojob.c b/src/core/monojob.c
+index 2f06633..4fefc46 100644
+--- a/src/core/monojob.c
++++ b/src/core/monojob.c
+@@ -93,9 +93,18 @@ int monojob_wait ( const char *string, unsigned long timeout ) {
+ 	int ongoing_rc;
+ 	int key;
+ 	int rc;
++	int simple=0;
+ 
+-	if ( string )
+-		printf ( "%s...", string );
++	if(string && strcmp( string, "-" ) == 0 )
++		simple=1;
++
++	if ( string ) {
++		if( simple ) {
++			printf ( " ..." );
++		} else {
++			printf ( "%s ...", string );
++		}
++	}
+ 	monojob_rc = -EINPROGRESS;
+ 	last_check = last_progress = last_display = currticks();
+ 	while ( monojob_rc == -EINPROGRESS ) {
+@@ -164,9 +173,13 @@ int monojob_wait ( const char *string, unsigned long timeout ) {
+ 	monojob_clear ( clear_len );
+ 	if ( string ) {
+ 		if ( rc ) {
+-			printf ( " %s\n", strerror ( rc ) );
++			if( simple ) {
++                	        printf ( " FAIL\n" );
++			} else {
++				printf ( " %s\n", strerror ( rc ) );
++			}
+ 		} else {
+-			printf ( " ok\n" );
++			printf ( " OK\n" );
+ 		}
+ 	}
+ 
+diff --git a/src/core/parseopt.c b/src/core/parseopt.c
+index 0070800..2019e3a 100644
+--- a/src/core/parseopt.c
++++ b/src/core/parseopt.c
+@@ -144,6 +144,21 @@ int parse_netdev ( char *text, struct net_device **netdev ) {
+ 	return 0;
+ }
+ 
++int parse_netdev_quiet ( char *text, struct net_device **netdev ) {
++
++	/* Sanity check */
++	assert ( text != NULL );
++
++	/* Find network device */
++	*netdev = find_netdev ( text );
++	if ( ! *netdev ) {
++		return -ENODEV;
++	}
++
++	return 0;
++}
++
++
+ /**
+  * Parse network device configurator name
+  *
+diff --git a/src/hci/commands/cert_cmd.c b/src/hci/commands/cert_cmd.c
+index 24b18bf..6cc9e77 100644
+--- a/src/hci/commands/cert_cmd.c
++++ b/src/hci/commands/cert_cmd.c
+@@ -122,7 +122,7 @@ static int cert_exec ( int argc, char **argv,
+ 
+ 	/* Acquire image, if applicable */
+ 	if ( ( optind < argc ) &&
+-	     ( ( rc = imgacquire ( argv[optind], 0, &image ) ) != 0 ) )
++	     ( ( rc = imgacquire ( argv[optind], 0, &image, 0 ) ) != 0 ) )
+ 		goto err_acquire;
+ 
+ 	/* Get first entry in certificate store */
+diff --git a/src/hci/commands/console_cmd.c b/src/hci/commands/console_cmd.c
+index ba472b9..e5e845b 100644
+--- a/src/hci/commands/console_cmd.c
++++ b/src/hci/commands/console_cmd.c
+@@ -96,7 +96,7 @@ static int console_exec ( int argc, char **argv ) {
+ 	if ( opts.picture ) {
+ 
+ 		/* Acquire image */
+-		if ( ( rc = imgacquire ( opts.picture, 0, &image ) ) != 0 )
++		if ( ( rc = imgacquire ( opts.picture, 0, &image, 0 ) ) != 0 )
+ 			goto err_acquire;
+ 
+ 		/* Convert to pixel buffer */
+diff --git a/src/hci/commands/digest_cmd.c b/src/hci/commands/digest_cmd.c
+index 7130806..5139d9b 100644
+--- a/src/hci/commands/digest_cmd.c
++++ b/src/hci/commands/digest_cmd.c
+@@ -77,7 +77,7 @@ static int digest_exec ( int argc, char **argv,
+ 	for ( i = optind ; i < argc ; i++ ) {
+ 
+ 		/* Acquire image */
+-		if ( ( rc = imgacquire ( argv[i], 0, &image ) ) != 0 )
++		if ( ( rc = imgacquire ( argv[i], 0, &image, 0 ) ) != 0 )
+ 			continue;
+ 		offset = 0;
+ 		len = image->len;
+diff --git a/src/hci/commands/ifmgmt_cmd.c b/src/hci/commands/ifmgmt_cmd.c
+index 2e976d3..4f75641 100644
+--- a/src/hci/commands/ifmgmt_cmd.c
++++ b/src/hci/commands/ifmgmt_cmd.c
+@@ -38,6 +38,48 @@ FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
+  *
+  */
+ 
++/** "ifopen" options */
++struct ifopen_options {
++	/** Be quiet */
++	int quiet;
++};
++
++/** "ifopen" option list */
++static struct option_descriptor ifopen_opts[] = {
++	OPTION_DESC ( "quiet", 'q', no_argument,
++		      struct ifopen_options, quiet, parse_flag ),
++};
++
++/**
++ * "ifopen" payload
++ *
++ * @v netdev		Network device
++ * @v opts		Command options
++ * @ret rc		Return status code
++ */
++static int ifopen_payload ( struct net_device *netdev,
++			    struct ifopen_options *opts __unused ) {
++	return ifopen ( netdev );
++}
++
++/** "ifopen" command descriptor */
++static struct ifcommon_command_descriptor ifopen_cmd =
++	IFCOMMON_COMMAND_DESC ( struct ifopen_options, ifopen_opts,
++				0, MAX_ARGUMENTS, "[<interface>...]",
++				ifopen_payload, 0 );
++
++/**
++ * The "ifopen" command
++ *
++ * @v argc		Argument count
++ * @v argv		Argument list
++ * @ret rc		Return status code
++ */
++static int ifopen_exec ( int argc, char **argv ) {
++	return ifcommon_exec ( argc, argv, &ifopen_cmd );
++}
++
++
+ /**
+  * Execute if<xxx> command
+  *
+@@ -52,6 +94,7 @@ int ifcommon_exec ( int argc, char **argv,
+ 		    struct ifcommon_command_descriptor *ifcmd ) {
+ 	struct command_descriptor *cmd = &ifcmd->cmd;
+ 	uint8_t opts[cmd->len];
++	struct ifopen_options *open_opts = (struct ifopen_options *)opts;
+ 	struct net_device *netdev;
+ 	int i;
+ 	int rc;
+@@ -63,8 +106,13 @@ int ifcommon_exec ( int argc, char **argv,
+ 	if ( optind != argc ) {
+ 		/* Treat arguments as a list of interfaces to try */
+ 		for ( i = optind ; i < argc ; i++ ) {
+-			if ( ( rc = parse_netdev ( argv[i], &netdev ) ) != 0 )
+-				continue;
++			if( ifcmd->payload==(void *)ifopen_payload && open_opts->quiet ) {
++				if ( ( rc = parse_netdev_quiet ( argv[i], &netdev ) ) != 0 )
++					continue;
++			} else {
++				if ( ( rc = parse_netdev ( argv[i], &netdev ) ) != 0 )
++					continue;
++			}
+ 			if ( ( ( rc = ifcmd->payload ( netdev, opts ) ) == 0 )
+ 			     && ifcmd->stop_on_first_success ) {
+ 				return 0;
+@@ -84,41 +132,6 @@ int ifcommon_exec ( int argc, char **argv,
+ 	return rc;
+ }
+ 
+-/** "ifopen" options */
+-struct ifopen_options {};
+-
+-/** "ifopen" option list */
+-static struct option_descriptor ifopen_opts[] = {};
+-
+-/**
+- * "ifopen" payload
+- *
+- * @v netdev		Network device
+- * @v opts		Command options
+- * @ret rc		Return status code
+- */
+-static int ifopen_payload ( struct net_device *netdev,
+-			    struct ifopen_options *opts __unused ) {
+-	return ifopen ( netdev );
+-}
+-
+-/** "ifopen" command descriptor */
+-static struct ifcommon_command_descriptor ifopen_cmd =
+-	IFCOMMON_COMMAND_DESC ( struct ifopen_options, ifopen_opts,
+-				0, MAX_ARGUMENTS, "[<interface>...]",
+-				ifopen_payload, 0 );
+-
+-/**
+- * The "ifopen" command
+- *
+- * @v argc		Argument count
+- * @v argv		Argument list
+- * @ret rc		Return status code
+- */
+-static int ifopen_exec ( int argc, char **argv ) {
+-	return ifcommon_exec ( argc, argv, &ifopen_cmd );
+-}
+-
+ /** "ifclose" options */
+ struct ifclose_options {};
+ 
+diff --git a/src/hci/commands/image_cmd.c b/src/hci/commands/image_cmd.c
+index 4a7c500..16d700f 100644
+--- a/src/hci/commands/image_cmd.c
++++ b/src/hci/commands/image_cmd.c
+@@ -50,16 +50,18 @@ struct imgsingle_options {
+ 	int replace;
+ 	/** Free image after execution */
+ 	int autofree;
++	/** Be vewy vewy quiet. I'm hunting wabbits! */
++	int quiet;
+ };
+ 
+ /** "img{single}" option list */
+ static union {
+ 	/* "imgexec" takes all three options */
+-	struct option_descriptor imgexec[4];
++	struct option_descriptor imgexec[5];
+ 	/* Other "img{single}" commands take only --name, --timeout,
+ 	 * and --autofree
+ 	 */
+-	struct option_descriptor imgsingle[3];
++	struct option_descriptor imgsingle[5];
+ } opts = {
+ 	.imgexec = {
+ 		OPTION_DESC ( "name", 'n', required_argument,
+@@ -70,6 +72,8 @@ static union {
+ 			      struct imgsingle_options, autofree, parse_flag ),
+ 		OPTION_DESC ( "replace", 'r', no_argument,
+ 			      struct imgsingle_options, replace, parse_flag ),
++		OPTION_DESC ( "quiet", 'q', no_argument,
++			      struct imgsingle_options, quiet, parse_flag ),
+ 	},
+ };
+ 
+@@ -79,7 +83,7 @@ struct imgsingle_descriptor {
+ 	struct command_descriptor *cmd;
+ 	/** Function to use to acquire the image */
+ 	int ( * acquire ) ( const char *name, unsigned long timeout,
+-			    struct image **image );
++			    struct image **image,int quiet );
+ 	/** Pre-action to take upon image, or NULL */
+ 	void ( * preaction ) ( struct image *image );
+ 	/** Action to take upon image, or NULL */
+@@ -126,7 +130,7 @@ static int imgsingle_exec ( int argc, char **argv,
+ 	/* Acquire the image */
+ 	if ( name_uri ) {
+ 		if ( ( rc = desc->acquire ( name_uri, opts.timeout,
+-					    &image ) ) != 0 )
++					    &image,opts.quiet ) ) != 0 )
+ 			goto err_acquire;
+ 	} else {
+ 		image = image_find_selected();
+diff --git a/src/hci/commands/image_trust_cmd.c b/src/hci/commands/image_trust_cmd.c
+index b34378f..09004fe 100644
+--- a/src/hci/commands/image_trust_cmd.c
++++ b/src/hci/commands/image_trust_cmd.c
+@@ -135,12 +135,12 @@ static int imgverify_exec ( int argc, char **argv ) {
+ 	signature_name_uri = argv[ optind + 1 ];
+ 
+ 	/* Acquire the image */
+-	if ( ( rc = imgacquire ( image_name_uri, opts.timeout, &image ) ) != 0 )
++	if ( ( rc = imgacquire ( image_name_uri, opts.timeout, &image,0 ) ) != 0 )
+ 		goto err_acquire_image;
+ 
+ 	/* Acquire the signature image */
+ 	if ( ( rc = imgacquire ( signature_name_uri, opts.timeout,
+-				 &signature ) ) != 0 )
++				 &signature,0 ) ) != 0 )
+ 		goto err_acquire_signature;
+ 
+ 	/* Verify image */
+diff --git a/src/include/ipxe/parseopt.h b/src/include/ipxe/parseopt.h
+index 829b343..4cd4a60 100644
+--- a/src/include/ipxe/parseopt.h
++++ b/src/include/ipxe/parseopt.h
+@@ -129,6 +129,7 @@ extern int parse_string ( char *text, char **value );
+ extern int parse_integer ( char *text, unsigned int *value );
+ extern int parse_timeout ( char *text, unsigned long *value );
+ extern int parse_netdev ( char *text, struct net_device **netdev );
++extern int parse_netdev_quiet ( char *text, struct net_device **netdev );
+ extern int
+ parse_netdev_configurator ( char *text,
+ 			    struct net_device_configurator **configurator );
+diff --git a/src/include/usr/imgmgmt.h b/src/include/usr/imgmgmt.h
+index 806df0b..e243d7a 100644
+--- a/src/include/usr/imgmgmt.h
++++ b/src/include/usr/imgmgmt.h
+@@ -12,11 +12,11 @@ FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
+ #include <ipxe/image.h>
+ 
+ extern int imgdownload ( struct uri *uri, unsigned long timeout,
+-			 struct image **image );
++			 struct image **image, int quiet );
+ extern int imgdownload_string ( const char *uri_string, unsigned long timeout,
+-				struct image **image );
++				struct image **image, int quiet );
+ extern int imgacquire ( const char *name, unsigned long timeout,
+-			struct image **image );
++			struct image **image, int quiet );
+ extern void imgstat ( struct image *image );
+ 
+ #endif /* _USR_IMGMGMT_H */
+diff --git a/src/usr/autoboot.c b/src/usr/autoboot.c
+index 51b07e1..450ba31 100644
+--- a/src/usr/autoboot.c
++++ b/src/usr/autoboot.c
+@@ -156,7 +156,7 @@ int uriboot ( struct uri *filename, struct uri **root_paths,
+ 
+ 	/* Attempt filename boot if applicable */
+ 	if ( filename ) {
+-		if ( ( rc = imgdownload ( filename, 0, &image ) ) != 0 )
++		if ( ( rc = imgdownload ( filename, 0, &image,0 ) ) != 0 )
+ 			goto err_download;
+ 		imgstat ( image );
+ 		image->flags |= IMAGE_AUTO_UNREGISTER;
+diff --git a/src/usr/ifmgmt.c b/src/usr/ifmgmt.c
+index f1172ba..0c8d20e 100644
+--- a/src/usr/ifmgmt.c
++++ b/src/usr/ifmgmt.c
+@@ -186,7 +186,7 @@ static int ifpoller_wait ( struct net_device *netdev,
+ 	ifpoller.configurator = configurator;
+ 	ifpoller.progress = progress;
+ 	intf_plug_plug ( &monojob, &ifpoller.job );
+-	return monojob_wait ( "", timeout );
++	return monojob_wait ( "-", timeout );
+ }
+ 
+ /**
+diff --git a/src/usr/imgmgmt.c b/src/usr/imgmgmt.c
+index a01d6e2..67b28fa 100644
+--- a/src/usr/imgmgmt.c
++++ b/src/usr/imgmgmt.c
+@@ -49,7 +49,7 @@ FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
+  * @ret rc		Return status code
+  */
+ int imgdownload ( struct uri *uri, unsigned long timeout,
+-		  struct image **image ) {
++		  struct image **image, int quiet ) {
+ 	struct uri uri_redacted;
+ 	char *uri_string_redacted;
+ 	int rc;
+@@ -60,10 +60,14 @@ int imgdownload ( struct uri *uri, unsigned long timeout,
+ 	uri_redacted.password = NULL;
+ 	uri_redacted.query = NULL;
+ 	uri_redacted.fragment = NULL;
+-	uri_string_redacted = format_uri_alloc ( &uri_redacted );
+-	if ( ! uri_string_redacted ) {
+-		rc = -ENOMEM;
+-		goto err_uri_string;
++	if ( quiet ) {
++		uri_string_redacted = NULL;
++	} else {
++		uri_string_redacted = format_uri_alloc ( &uri_redacted );
++		if ( ! uri_string_redacted ) {
++			rc = -ENOMEM;
++			goto err_uri_string;
++		}
+ 	}
+ 
+ 	/* Resolve URI */
+@@ -103,7 +107,8 @@ int imgdownload ( struct uri *uri, unsigned long timeout,
+  err_alloc_image:
+ 	uri_put ( uri );
+  err_resolve_uri:
+-	free ( uri_string_redacted );
++	if(uri_string_redacted)
++		free ( uri_string_redacted );
+  err_uri_string:
+ 	return rc;
+ }
+@@ -117,14 +122,14 @@ int imgdownload ( struct uri *uri, unsigned long timeout,
+  * @ret rc		Return status code
+  */
+ int imgdownload_string ( const char *uri_string, unsigned long timeout,
+-			 struct image **image ) {
++			 struct image **image, int quiet ) {
+ 	struct uri *uri;
+ 	int rc;
+ 
+ 	if ( ! ( uri = parse_uri ( uri_string ) ) )
+ 		return -ENOMEM;
+ 
+-	rc = imgdownload ( uri, timeout, image );
++	rc = imgdownload ( uri, timeout, image, quiet );
+ 
+ 	uri_put ( uri );
+ 	return rc;
+@@ -139,7 +144,7 @@ int imgdownload_string ( const char *uri_string, unsigned long timeout,
+  * @ret rc		Return status code
+  */
+ int imgacquire ( const char *name_uri, unsigned long timeout,
+-		 struct image **image ) {
++		 struct image **image, int quiet ) {
+ 
+ 	/* If we already have an image with the specified name, use it */
+ 	*image = find_image ( name_uri );
+@@ -147,7 +152,7 @@ int imgacquire ( const char *name_uri, unsigned long timeout,
+ 		return 0;
+ 
+ 	/* Otherwise, download a new image */
+-	return imgdownload_string ( name_uri, timeout, image );
++	return imgdownload_string ( name_uri, timeout, image, quiet );
+ }
+ 
+ /**
